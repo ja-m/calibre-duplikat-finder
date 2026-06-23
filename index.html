@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Calibre · Duplikat-Finder</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.2/sql-wasm.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@300;400;600&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:       #0f1117;
+    --surface:  #181c27;
+    --border:   #252a3a;
+    --muted:    #3a4060;
+    --text:     #c8cfe8;
+    --subtle:   #6b7599;
+    --accent:   #e03e3e;
+    --accent2:  #3e8be0;
+    --success:  #3ecf6e;
+    --mono:     'IBM Plex Mono', monospace;
+    --sans:     'IBM Plex Sans', sans-serif;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.6;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  header {
+    padding: 28px 40px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: baseline;
+    gap: 16px;
+  }
+
+  header h1 {
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: -0.3px;
+  }
+
+  header .tag {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--subtle);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 2px 8px;
+    letter-spacing: 0.5px;
+  }
+
+  main {
+    flex: 1;
+    padding: 40px;
+    max-width: 980px;
+    width: 100%;
+    margin: 0 auto;
+  }
+
+  /* Drop Zone */
+  #drop-zone {
+    border: 2px dashed var(--muted);
+    border-radius: 10px;
+    padding: 64px 40px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+    position: relative;
+  }
+
+  #drop-zone:hover, #drop-zone.drag-over {
+    border-color: var(--accent2);
+    background: rgba(62,139,224,0.04);
+  }
+
+  #drop-zone input[type=file] {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+    width: 100%;
+    height: 100%;
+  }
+
+  #drop-zone .icon {
+    font-size: 40px;
+    margin-bottom: 16px;
+    display: block;
+  }
+
+  #drop-zone h2 {
+    font-size: 17px;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+
+  #drop-zone p {
+    color: var(--subtle);
+    font-size: 13px;
+  }
+
+  #drop-zone .fname {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--accent2);
+    margin-top: 10px;
+    display: none;
+  }
+
+  /* Status bar */
+  #status-bar {
+    display: none;
+    margin-top: 24px;
+    padding: 14px 20px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--subtle);
+    display: none;
+    align-items: center;
+    gap: 10px;
+  }
+
+  #status-bar .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--accent2);
+    animation: pulse 1s infinite;
+    flex-shrink: 0;
+  }
+
+  @keyframes pulse {
+    0%,100% { opacity:1; } 50% { opacity:0.3; }
+  }
+
+  /* Stats row */
+  #stats {
+    display: none;
+    margin-top: 28px;
+    gap: 16px;
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px 24px;
+  }
+
+  .stat-card .value {
+    font-family: var(--mono);
+    font-size: 32px;
+    font-weight: 600;
+    line-height: 1;
+    margin-bottom: 6px;
+  }
+
+  .stat-card .label {
+    font-size: 12px;
+    color: var(--subtle);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+  }
+
+  .stat-card.danger .value { color: var(--accent); }
+  .stat-card.info   .value { color: var(--accent2); }
+  .stat-card.ok     .value { color: var(--success); }
+
+  /* Controls */
+  #controls {
+    display: none;
+    margin-top: 28px;
+    align-items: center;
+    gap: 12px;
+  }
+
+  #search-input {
+    flex: 1;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 9px 14px;
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  #search-input:focus { border-color: var(--accent2); }
+  #search-input::placeholder { color: var(--subtle); }
+
+  .btn {
+    padding: 9px 18px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-family: var(--sans);
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    transition: opacity 0.15s;
+  }
+  .btn:hover { opacity: 0.85; }
+
+  .btn-export {
+    background: var(--accent2);
+    color: #fff;
+  }
+
+  /* Results */
+  #results {
+    display: none;
+    margin-top: 24px;
+  }
+
+  #results h3 {
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--subtle);
+    margin-bottom: 16px;
+  }
+
+  .group {
+    margin-bottom: 16px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  .group-header {
+    background: rgba(224,62,62,0.08);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 18px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .group-header .badge {
+    font-family: var(--mono);
+    font-size: 10px;
+    background: var(--accent);
+    color: #fff;
+    border-radius: 4px;
+    padding: 2px 7px;
+    flex-shrink: 0;
+  }
+
+  .group-header .title {
+    font-weight: 600;
+    font-size: 14px;
+    flex: 1;
+  }
+
+  .group-header .author {
+    font-size: 12px;
+    color: var(--subtle);
+    font-style: italic;
+  }
+
+  .entry {
+    padding: 11px 18px;
+    display: grid;
+    grid-template-columns: 48px 1fr 1fr 160px;
+    gap: 10px;
+    align-items: center;
+    font-size: 13px;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.1s;
+  }
+
+  .entry:last-child { border-bottom: none; }
+  .entry:hover { background: rgba(255,255,255,0.025); }
+
+  .entry .eid {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--subtle);
+  }
+
+  .entry .etitle { color: var(--text); }
+  .entry .eauthor { color: var(--subtle); }
+
+  .entry .epub {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--subtle);
+    text-align: right;
+  }
+
+  .entry-header {
+    padding: 8px 18px;
+    display: grid;
+    grid-template-columns: 48px 1fr 1fr 160px;
+    gap: 10px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.7px;
+    color: var(--muted);
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+
+  #no-dupes {
+    display: none;
+    text-align: center;
+    padding: 48px 20px;
+    color: var(--subtle);
+  }
+
+  #no-dupes .check { font-size: 36px; margin-bottom: 12px; }
+  #no-dupes p { font-size: 14px; }
+
+  #no-results {
+    display: none;
+    padding: 24px;
+    text-align: center;
+    color: var(--subtle);
+    font-size: 13px;
+  }
+
+  footer {
+    padding: 20px 40px;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--muted);
+    font-family: var(--mono);
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Calibre Duplikat-Finder</h1>
+  <span class="tag">metadata.db · Titel + Autor</span>
+</header>
+
+<main>
+  <div id="drop-zone">
+    <input type="file" id="file-input" accept=".db">
+    <span class="icon">🗄️</span>
+    <h2>metadata.db hierher ziehen</h2>
+    <p>oder klicken, um eine Datei auszuwählen</p>
+    <div class="fname" id="fname"></div>
+  </div>
+
+  <div id="status-bar">
+    <div class="dot"></div>
+    <span id="status-text">Datenbank wird geladen…</span>
+  </div>
+
+  <div id="stats" style="display:none; margin-top:28px; gap:16px; grid-template-columns:repeat(3,1fr);">
+    <div class="stat-card info">
+      <div class="value" id="stat-total">—</div>
+      <div class="label">Bücher gesamt</div>
+    </div>
+    <div class="stat-card danger">
+      <div class="value" id="stat-dupes">—</div>
+      <div class="label">Duplikat-Gruppen</div>
+    </div>
+    <div class="stat-card ok">
+      <div class="value" id="stat-affected">—</div>
+      <div class="label">Betroffene Einträge</div>
+    </div>
+  </div>
+
+  <div id="controls" style="display:none; margin-top:28px; display:none; align-items:center; gap:12px;">
+    <input type="text" id="search-input" placeholder="Titel oder Autor suchen…">
+    <button class="btn btn-export" onclick="exportCSV()">CSV exportieren</button>
+  </div>
+
+  <div id="results">
+    <h3 id="results-heading">Gefundene Duplikat-Gruppen</h3>
+    <div class="entry-header">
+      <span>ID</span><span>Titel</span><span>Autor(en)</span><span style="text-align:right">Hinzugefügt</span>
+    </div>
+    <div id="groups-container"></div>
+    <div id="no-results">Keine Ergebnisse für diesen Suchbegriff.</div>
+  </div>
+
+  <div id="no-dupes">
+    <div class="check">✅</div>
+    <p>Keine Duplikate gefunden — deine Bibliothek ist sauber.</p>
+  </div>
+</main>
+
+<footer>calibre-duplikat-finder · läuft vollständig im Browser · keine Daten werden hochgeladen</footer>
+
+<script>
+let allGroups = [];
+
+const dropZone = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+const statusBar = document.getElementById('status-bar');
+const statusText = document.getElementById('status-text');
+
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) processFile(file);
+});
+fileInput.addEventListener('change', () => {
+  if (fileInput.files[0]) processFile(fileInput.files[0]);
+});
+
+document.getElementById('search-input').addEventListener('input', renderFiltered);
+
+async function processFile(file) {
+  document.getElementById('fname').textContent = file.name;
+  document.getElementById('fname').style.display = 'block';
+  showStatus('SQL.js wird initialisiert…');
+
+  try {
+    const SQL = await initSqlJs({
+      locateFile: f => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.2/${f}`
+    });
+
+    showStatus('Datei wird gelesen…');
+    const buf = await file.arrayBuffer();
+    showStatus('Datenbank wird analysiert…');
+    const db = new SQL.Database(new Uint8Array(buf));
+
+    // Total books
+    const totalRes = db.exec("SELECT COUNT(*) FROM books");
+    const total = totalRes[0].values[0][0];
+
+    // Find duplicates by normalized title + author
+    const query = `
+      SELECT
+        b.id,
+        LOWER(TRIM(b.title)) AS norm_title,
+        LOWER(TRIM(COALESCE(GROUP_CONCAT(a.name, ', '), ''))) AS norm_authors,
+        b.title,
+        GROUP_CONCAT(a.name, ', ') AS authors,
+        b.pubdate
+      FROM books b
+      LEFT JOIN books_authors_link bal ON bal.book = b.id
+      LEFT JOIN authors a ON a.id = bal.author
+      GROUP BY b.id
+      ORDER BY norm_title, norm_authors
+    `;
+
+    const rows = db.exec(query);
+    if (!rows.length) { hideStatus(); showNoDupes(); return; }
+
+    const books = rows[0].values.map(r => ({
+      id: r[0],
+      normTitle: r[1],
+      normAuthors: r[2],
+      title: r[3],
+      authors: r[4] || '—',
+      pubdate: r[5] ? r[5].split('T')[0] : '—'
+    }));
+
+    // Group
+    const map = new Map();
+    for (const b of books) {
+      const key = b.normTitle + '|||' + b.normAuthors;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(b);
+    }
+
+    allGroups = [...map.values()].filter(g => g.length > 1);
+    const affectedCount = allGroups.reduce((s, g) => s + g.length, 0);
+
+    hideStatus();
+    document.getElementById('stat-total').textContent = total;
+    document.getElementById('stat-dupes').textContent = allGroups.length;
+    document.getElementById('stat-affected').textContent = affectedCount;
+
+    const statsEl = document.getElementById('stats');
+    statsEl.style.display = 'grid';
+
+    const ctrlEl = document.getElementById('controls');
+    ctrlEl.style.display = 'flex';
+
+    if (allGroups.length === 0) {
+      showNoDupes();
+    } else {
+      document.getElementById('results').style.display = 'block';
+      renderFiltered();
+    }
+
+  } catch (err) {
+    showStatus('❌ Fehler: ' + err.message);
+    console.error(err);
+  }
+}
+
+function renderFiltered() {
+  const q = document.getElementById('search-input').value.toLowerCase();
+  const container = document.getElementById('groups-container');
+  const noResults = document.getElementById('no-results');
+
+  const filtered = q
+    ? allGroups.filter(g => g[0].title.toLowerCase().includes(q) || g[0].authors.toLowerCase().includes(q))
+    : allGroups;
+
+  container.innerHTML = '';
+
+  if (filtered.length === 0) {
+    noResults.style.display = 'block';
+    document.getElementById('results-heading').textContent = 'Gefundene Duplikat-Gruppen';
+    return;
+  }
+
+  noResults.style.display = 'none';
+  document.getElementById('results-heading').textContent =
+    `${filtered.length} Duplikat-Gruppe${filtered.length !== 1 ? 'n' : ''} gefunden`;
+
+  for (const group of filtered) {
+    const div = document.createElement('div');
+    div.className = 'group';
+
+    const header = document.createElement('div');
+    header.className = 'group-header';
+    header.innerHTML = `
+      <span class="badge">${group.length}×</span>
+      <span class="title">${esc(group[0].title)}</span>
+      <span class="author">${esc(group[0].authors)}</span>
+    `;
+    div.appendChild(header);
+
+    for (const b of group) {
+      const row = document.createElement('div');
+      row.className = 'entry';
+      row.innerHTML = `
+        <span class="eid">#${b.id}</span>
+        <span class="etitle">${esc(b.title)}</span>
+        <span class="eauthor">${esc(b.authors)}</span>
+        <span class="epub">${esc(b.pubdate)}</span>
+      `;
+      div.appendChild(row);
+    }
+
+    container.appendChild(div);
+  }
+}
+
+function exportCSV() {
+  if (!allGroups.length) return;
+  const rows = [['Gruppe', 'ID', 'Titel', 'Autor(en)', 'Hinzugefügt']];
+  allGroups.forEach((g, i) => {
+    g.forEach(b => rows.push([i + 1, b.id, b.title, b.authors, b.pubdate]));
+  });
+  const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'calibre-duplikate.csv'; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function showStatus(msg) {
+  statusText.textContent = msg;
+  statusBar.style.display = 'flex';
+}
+
+function hideStatus() {
+  statusBar.style.display = 'none';
+}
+
+function showNoDupes() {
+  document.getElementById('no-dupes').style.display = 'block';
+}
+
+function esc(str) {
+  return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
+</body>
+</html>
