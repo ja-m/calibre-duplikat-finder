@@ -60,6 +60,18 @@
     letter-spacing: 0.5px;
   }
 
+  header .version {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--success);
+    background: rgba(62, 207, 110, 0.08);
+    border: 1px solid rgba(62, 207, 110, 0.25);
+    border-radius: 4px;
+    padding: 2px 8px;
+    letter-spacing: 0.5px;
+    margin-left: auto;
+  }
+
   main {
     flex: 1;
     padding: 40px;
@@ -274,6 +286,32 @@
     font-style: italic;
   }
 
+  .btn-copy-author {
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--subtle);
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s, background 0.15s;
+    flex-shrink: 0;
+    line-height: 1.6;
+  }
+
+  .btn-copy-author:hover {
+    border-color: var(--accent2);
+    color: var(--accent2);
+    background: rgba(62,139,224,0.06);
+  }
+
+  .btn-copy-author.copied {
+    border-color: var(--success);
+    color: var(--success);
+    background: rgba(62,207,110,0.08);
+  }
+
   .entry {
     padding: 11px 18px;
     display: grid;
@@ -341,6 +379,13 @@
     font-size: 12px;
     color: var(--muted);
     font-family: var(--mono);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  footer .footer-version {
+    color: var(--subtle);
   }
 </style>
 </head>
@@ -349,6 +394,7 @@
 <header>
   <h1>Calibre Duplikat-Finder</h1>
   <span class="tag">metadata.db · Titel + Autor</span>
+  <span class="version">v1.0.0</span>
 </header>
 
 <main>
@@ -400,7 +446,10 @@
   </div>
 </main>
 
-<footer>calibre-duplikat-finder · läuft vollständig im Browser · keine Daten werden hochgeladen</footer>
+<footer>
+  <span>calibre-duplikat-finder · läuft vollständig im Browser · keine Daten werden hochgeladen</span>
+  <span class="footer-version">v1.0.0</span>
+</footer>
 
 <script>
 let allGroups = [];
@@ -537,8 +586,26 @@ function renderFiltered() {
       <span class="badge">${group.length}×</span>
       <span class="title">${esc(group[0].title)}</span>
       <span class="author">${esc(group[0].authors)}</span>
+      <button class="btn-copy-author" data-author="${esc(group[0].authors)}">kopieren</button>
     `;
     div.appendChild(header);
+
+    const copyBtn = header.querySelector('.btn-copy-author');
+    copyBtn.addEventListener('click', function() {
+      const author = group[0].authors;
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(author).then(() => {
+          copyBtn.textContent = '✓ kopiert';
+          copyBtn.classList.add('copied');
+          setTimeout(() => {
+            copyBtn.textContent = 'kopieren';
+            copyBtn.classList.remove('copied');
+          }, 2000);
+        }).catch(() => fallbackCopy(copyBtn, author));
+      } else {
+        fallbackCopy(copyBtn, author);
+      }
+    });
 
     for (const b of group) {
       const row = document.createElement('div');
@@ -581,6 +648,28 @@ function hideStatus() {
 
 function showNoDupes() {
   document.getElementById('no-dupes').style.display = 'block';
+}
+
+function fallbackCopy(btn, text) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.cssText = 'position:fixed;opacity:0;pointer-events:none';
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  try {
+    document.execCommand('copy');
+    btn.textContent = '✓ kopiert';
+    btn.classList.add('copied');
+    setTimeout(() => {
+      btn.textContent = 'kopieren';
+      btn.classList.remove('copied');
+    }, 2000);
+  } catch(e) {
+    btn.textContent = '✗ Fehler';
+    setTimeout(() => { btn.textContent = 'kopieren'; }, 2000);
+  }
+  document.body.removeChild(ta);
 }
 
 function esc(str) {
