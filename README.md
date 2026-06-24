@@ -34,7 +34,3 @@ Die App verwendet [SQL.js](https://github.com/sql-js/sql.js/), um SQLite-Datenba
 
 - Vanilla HTML/CSS/JS
 - [SQL.js](https://github.com/sql-js/sql.js/) (SQLite im Browser via WebAssembly)
-
-## Lizenz
-
-MIT
