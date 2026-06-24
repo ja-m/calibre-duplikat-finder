@@ -315,7 +315,7 @@
   .entry {
     padding: 11px 18px;
     display: grid;
-    grid-template-columns: 48px 1fr 1fr 160px;
+    grid-template-columns: 48px 1fr 1fr 80px 160px;
     gap: 10px;
     align-items: center;
     font-size: 13px;
@@ -335,6 +335,12 @@
   .entry .etitle { color: var(--text); }
   .entry .eauthor { color: var(--subtle); }
 
+  .entry .elang {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--subtle);
+  }
+
   .entry .epub {
     font-family: var(--mono);
     font-size: 11px;
@@ -345,7 +351,7 @@
   .entry-header {
     padding: 8px 18px;
     display: grid;
-    grid-template-columns: 48px 1fr 1fr 160px;
+    grid-template-columns: 48px 1fr 1fr 80px 160px;
     gap: 10px;
     font-size: 11px;
     text-transform: uppercase;
@@ -393,8 +399,8 @@
 
 <header>
   <h1>Calibre Duplikat-Finder</h1>
-  <span class="tag">metadata.db · Titel + Autor</span>
-  <span class="version">v1.0.0</span>
+  <span class="tag">metadata.db · Titel + Autor + Sprache</span>
+  <span class="version">v1.1.0</span>
 </header>
 
 <main>
@@ -434,7 +440,7 @@
   <div id="results">
     <h3 id="results-heading">Gefundene Duplikat-Gruppen</h3>
     <div class="entry-header">
-      <span>ID</span><span>Titel</span><span>Autor(en)</span><span style="text-align:right">Hinzugefügt</span>
+      <span>ID</span><span>Titel</span><span>Autor(en)</span><span>Sprache</span><span style="text-align:right">Hinzugefügt</span>
     </div>
     <div id="groups-container"></div>
     <div id="no-results">Keine Ergebnisse für diesen Suchbegriff.</div>
@@ -448,7 +454,7 @@
 
 <footer>
   <span>calibre-duplikat-finder · läuft vollständig im Browser · keine Daten werden hochgeladen</span>
-  <span class="footer-version">v1.0.0</span>
+  <span class="footer-version">v1.1.0</span>
 </footer>
 
 <script>
@@ -492,18 +498,21 @@ async function processFile(file) {
     const totalRes = db.exec("SELECT COUNT(*) FROM books");
     const total = totalRes[0].values[0][0];
 
-    // Find duplicates by normalized title + author
+    // Find duplicates by normalized title + author + language
     const query = `
       SELECT
         b.id,
         LOWER(TRIM(b.title)) AS norm_title,
         LOWER(TRIM(COALESCE(GROUP_CONCAT(a.name, ', '), ''))) AS norm_authors,
+        COALESCE(GROUP_CONCAT(DISTINCT l.lang_code ORDER BY l.lang_code), 'unknown') AS lang_codes,
         b.title,
         GROUP_CONCAT(a.name, ', ') AS authors,
         b.pubdate
       FROM books b
       LEFT JOIN books_authors_link bal ON bal.book = b.id
       LEFT JOIN authors a ON a.id = bal.author
+      LEFT JOIN books_languages_link bll ON bll.book = b.id
+      LEFT JOIN languages l ON l.id = bll.lang_code
       GROUP BY b.id
       ORDER BY norm_title, norm_authors
     `;
@@ -515,15 +524,16 @@ async function processFile(file) {
       id: r[0],
       normTitle: r[1],
       normAuthors: r[2],
-      title: r[3],
-      authors: r[4] || '—',
-      pubdate: r[5] ? r[5].split('T')[0] : '—'
+      langs: r[3],
+      title: r[4],
+      authors: r[5] || '—',
+      pubdate: r[6] ? r[6].split('T')[0] : '—'
     }));
 
-    // Group
+    // Group by title + author + language
     const map = new Map();
     for (const b of books) {
-      const key = b.normTitle + '|||' + b.normAuthors;
+      const key = b.normTitle + '|||' + b.normAuthors + '|||' + b.langs;
       if (!map.has(key)) map.set(key, []);
       map.get(key).push(b);
     }
@@ -614,6 +624,7 @@ function renderFiltered() {
         <span class="eid">#${b.id}</span>
         <span class="etitle">${esc(b.title)}</span>
         <span class="eauthor">${esc(b.authors)}</span>
+        <span class="elang">${esc(b.langs)}</span>
         <span class="epub">${esc(b.pubdate)}</span>
       `;
       div.appendChild(row);
@@ -625,9 +636,9 @@ function renderFiltered() {
 
 function exportCSV() {
   if (!allGroups.length) return;
-  const rows = [['Gruppe', 'ID', 'Titel', 'Autor(en)', 'Hinzugefügt']];
+  const rows = [['Gruppe', 'ID', 'Titel', 'Autor(en)', 'Sprache', 'Hinzugefügt']];
   allGroups.forEach((g, i) => {
-    g.forEach(b => rows.push([i + 1, b.id, b.title, b.authors, b.pubdate]));
+    g.forEach(b => rows.push([i + 1, b.id, b.title, b.authors, b.langs, b.pubdate]));
   });
   const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
   const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
